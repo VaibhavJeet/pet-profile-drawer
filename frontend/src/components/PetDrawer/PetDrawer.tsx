@@ -54,8 +54,35 @@ const PetDrawer = ({
   const [gender, setGender] = useState<"Male" | "Female">("Male");
   const [isNeutered, setIsNeutered] = useState(false);
 
+  const [localPet, setLocalPet] = useState<Pet>({
+    id: 0,
+    clientId: 0,
+    name: "",
+    status: "Active",
+    type: "",
+    breed: "",
+    size: "",
+    temper: "",
+    color: "",
+    gender: "",
+    weightKg: 0,
+    dob: "",
+    attributes: [],
+    notes: null,
+    customerNotes: null,
+    photos: [],
+  });
+
   useEffect(() => {
-    if (pet) setEditedPet({ ...pet });
+    if (pet) {
+      setLocalPet(pet);
+      setEditedPet({ ...pet });
+      const genderMatch = pet.gender.match(/^(Neutered\s*-?\s*)?(.+)$/i);
+      if (genderMatch) {
+        setIsNeutered(!!genderMatch[1]);
+        setGender(genderMatch[2] as "Male" | "Female");
+      }
+    }
   }, [pet]);
 
   useEffect(() => {
@@ -72,26 +99,23 @@ const PetDrawer = ({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedPet),
-      }).then((res) => {
-        if (!res.ok && Math.random() < 0.3)
-          throw new Error("Simulated API failure");
-        return res.json();
-      }),
-    onMutate: async (updatedPet) => {
-      await queryClient.cancelQueries({ queryKey: ["pet", petId] });
-      const previous = queryClient.getQueryData<Pet>(["pet", petId]);
-      queryClient.setQueryData(["pet", petId], updatedPet);
-      return { previous };
-    },
-    onError: (err, variables, context) => {
-      if (context?.previous)
-        queryClient.setQueryData(["pet", petId], context.previous);
-      toast.error(`Update failed: ${err.message}. Changes rolled back.`);
-    },
-    onSuccess: () => {
+      }).then((res) => res.json()),
+    onSuccess: (data, variables) => {
+      const updatedPhotos = data.photos || variables.photos;
+      const updatedPetData = {
+        ...localPet,
+        ...data,
+        photos: updatedPhotos,
+        attributes: data.attributes || localPet.attributes,
+      };
+      setLocalPet(updatedPetData);
       queryClient.invalidateQueries({ queryKey: ["pet", petId] });
+      queryClient.refetchQueries({ queryKey: ["pet", petId] });
       setIsEditing(false);
       toast.success("Pet updated successfully");
+    },
+    onError: (error) => {
+      toast.error(`Update failed: ${error.message}`);
     },
   });
 
@@ -132,17 +156,6 @@ const PetDrawer = ({
 
   const age = pet?.dob ? calculateAge(pet.dob) : "N/A";
 
-  useEffect(() => {
-    if (pet) {
-      setEditedPet({ ...pet });
-      const genderMatch = pet.gender.match(/^(Neutered\s*-?\s*)?(.+)$/i);
-      if (genderMatch) {
-        setIsNeutered(!!genderMatch[1]);
-        setGender(genderMatch[2] as "Male" | "Female");
-      }
-    }
-  }, [pet]);
-
   const handleSave = () => {
     if (!editedPet) return;
     const requiredFields = ["name", "type", "breed", "gender", "size"];
@@ -154,7 +167,7 @@ const PetDrawer = ({
         return;
       }
     }
-    const weightStr = editedPet.weightKg.toFixed(2);
+    const weightStr = editedPet.weightKg?.toString() || "0";
     const weightNum = parseFloat(weightStr);
     if (weightNum <= 0 || weightNum > 200) {
       toast.error("Weight must be between 0 and 200 kg");
@@ -229,10 +242,8 @@ const PetDrawer = ({
         )
       )
         .then((base64Images) => {
-          updatePetMutation.mutate({
-            ...pet,
-            photos: [...pet.photos, ...base64Images],
-          });
+          const updatedPhotos = [...pet.photos, ...base64Images]; // append all new images
+          updatePetMutation.mutate({ ...pet, photos: updatedPhotos });
         })
         .catch((err) => {
           toast.error(err.message);
@@ -250,6 +261,29 @@ const PetDrawer = ({
     maxSize: 5 * 1024 * 1024,
     multiple: true,
   });
+
+  const handleEditMainImage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !pet) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error(`File ${file.name} exceeds 5MB limit`);
+      return;
+    }
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      toast.error(`File ${file.name} must be PNG, JPG, or WebP`);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64Image = reader.result as string;
+      const updatedPhotos = [base64Image, ...pet.photos.slice(1)]; // replace main image
+      updatePetMutation.mutate({ ...pet, photos: updatedPhotos });
+    };
+    reader.onerror = () => toast.error(`Failed to read ${file.name}`);
+    reader.readAsDataURL(file);
+  };
 
   const handleDeletePhoto = (index: number) => {
     if (!window.confirm("Are you sure you want to delete this photo?")) return;
@@ -380,10 +414,10 @@ const PetDrawer = ({
     { label: "Temper", value: pet.temper },
     { label: "Color", value: pet.color },
     { label: "Gender", value: pet.gender },
-    { label: "Weight", value: `${pet.weightKg.toFixed(2)} kg` },
+    { label: "Weight", value: `${(localPet?.weightKg ?? 0).toFixed(2)} kg` },
     {
       label: "Attributes",
-      value: pet.attributes.map((attr) => (
+      value: (localPet?.attributes ?? []).map((attr) => (
         <span
           key={attr}
           className="inline-block bg-gray-200 rounded-full px-2 py-1 text-xs mr-1 mb-1"
@@ -392,8 +426,8 @@ const PetDrawer = ({
         </span>
       )),
     },
-    { label: "Notes", value: pet.notes || "N/A" },
-    { label: "Customer's Notes", value: pet.customerNotes || "N/A" },
+    { label: "Notes", value: localPet?.notes || "N/A" },
+    { label: "Customer's Notes", value: localPet?.customerNotes || "N/A" },
   ];
 
   const predefinedAttributes = [
@@ -438,10 +472,15 @@ const PetDrawer = ({
       <div className="w-full lg:w-1/4 bg-gray-50 p-4 lg:p-6 border-r border-gray-200 lg:border-r-0">
         <div className="flex flex-col items-center gap-4">
           <div className="relative w-24 h-24 rounded-full overflow-hidden bg-gray-300">
-            {pet.photos[0] ? (
+            {localPet.photos[0] ? (
               <img
-                src={pet.photos[0]}
-                alt={pet.name}
+                src={
+                  localPet.photos[0] &&
+                  !localPet.photos[0].startsWith("data:image")
+                    ? localPet.photos[0]
+                    : "/seed/dog1.png"
+                }
+                alt={localPet.name}
                 className="w-full h-full object-cover"
               />
             ) : (
@@ -453,26 +492,33 @@ const PetDrawer = ({
                 <path d="M10 2a8 8 0 100 16 8 8 0 000-16zM8.5 7.5a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zM6 11.5a1 1 0 011-1h6a1 1 0 011 1c0 1.657-1.343 3-3 3S6 13.157 6 11.5z" />
               </svg>
             )}
-            <button
-              onClick={() =>
-                alert("Edit main image functionality to be implemented")
-              }
-              className="absolute bottom-2 right-2 bg-white p-1 rounded-full shadow-md focus:ring-2 focus:ring-pink-500 md:bottom-2 md:right-2"
+            <label
+              htmlFor="editMainImage"
+              className="absolute bottom-2 right-2 bg-white p-1 rounded-full shadow-md cursor-pointer focus:ring-2 focus:ring-pink-500 md:bottom-2 md:right-2"
               aria-label="Edit main image"
             >
               <FiEdit2 className="w-4 h-4 text-gray-700" />
-            </button>
+            </label>
+            <input
+              id="editMainImage"
+              type="file"
+              accept="image/png, image/jpeg, image/webp"
+              onChange={handleEditMainImage}
+              className="hidden"
+            />
           </div>
           <div className="text-center">
-            <h2 className="text-xl font-semibold text-gray-900">{pet.name}</h2>
+            <h2 className="text-xl font-semibold text-gray-900">
+              {localPet.name}
+            </h2>
             <span
               className={`mt-1 inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                pet.status === "Active"
+                localPet.status === "Active"
                   ? "bg-green-100 text-green-800"
                   : "bg-gray-300 text-gray-700"
               }`}
             >
-              {pet.status}
+              {localPet.status}
             </span>
           </div>
           <div className="relative w-full">
@@ -519,7 +565,7 @@ const PetDrawer = ({
           </div>
           <div className="text-gray-600 mt-4 text-center">
             <p className="text-gray-800 font-medium">Date of Birth</p>
-            <p>{pet.dob}</p>
+            <p>{localPet.dob}</p>
             <p className="text-sm">(Age: {age})</p>
           </div>
         </div>
@@ -935,7 +981,7 @@ const PetDrawer = ({
               )}
             </div>
             <div className="space-y-4">
-              {pet.photos.length ? (
+              {localPet.photos.length ? (
                 <>
                   {/* main image */}
                   <div className="relative">
@@ -944,26 +990,27 @@ const PetDrawer = ({
                     </h3>
                     <img
                       src={
-                        pet.photos[0] && !pet.photos[0].startsWith("data:image")
-                          ? pet.photos[0]
-                          : "seed/dog1.png"
+                        localPet.photos[0] &&
+                        !localPet.photos[0].startsWith("data:image")
+                          ? localPet.photos[0]
+                          : "/seed/dog1.png"
                       }
-                      alt={`${pet.name} main photo`}
+                      alt={`${localPet.name} main photo`}
                       className="w-full h-64 sm:h-64 object-cover rounded-md"
                     />
                   </div>
-                  {/* aditional images */}
-                  {pet.photos.length > 1 && (
+                  {/* additional images */}
+                  {localPet.photos.length > 1 && (
                     <>
                       <h3 className="text-lg font-medium text-gray-700 mt-4 mb-2">
                         Additional Images
                       </h3>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                        {pet.photos.slice(1).map((photo, index) => (
+                        {localPet.photos.slice(1).map((photo, index) => (
                           <div key={index} className="relative">
                             <img
                               src={photo}
-                              alt={`${pet.name} photo ${index + 2}`}
+                              alt={`${localPet.name} photo ${index + 2}`}
                               className="w-full h-32 object-cover rounded-md"
                             />
                             <button
@@ -985,8 +1032,8 @@ const PetDrawer = ({
                     Main Image
                   </h3>
                   <img
-                    src="seed/dog1.png"
-                    alt={`${pet.name} default photo`}
+                    src="/seed/dog1.png"
+                    alt={`${localPet.name} default photo`}
                     className="w-full h-64 object-cover rounded-md"
                   />
                   <p className="text-gray-500 text-center mt-4">

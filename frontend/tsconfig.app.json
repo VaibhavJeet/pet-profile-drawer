@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx", // Enable JSX for .tsx files
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true,
+    "esModuleInterop": true, // Needed for Jest compatibility
+    "types": ["jest", "node", "@testing-library/jest-dom"],
+    "baseUrl": ".", // for resolving imports
+    "paths": {
+      "@/*": ["src/*"] // for aliasing src imports
+    },
+    "isolatedModules": true
+  },
+  "include": ["src/**/*"], // Include all src files, including tests
+  "exclude": ["node_modules", "**/*.spec.ts", "**/*.test.ts", "**/*.test.tsx"] // Exclude spec files from app build (handled by Jest)
+}

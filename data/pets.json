@@ -1,0 +1,20 @@
+[
+  {
+    "id": 101,
+    "clientId": 1,
+    "name": "Dog 1",
+    "status": "Active",
+    "type": "Dog",
+    "breed": "American Staffordshire Terrier",
+    "size": "Medium",
+    "temper": "Excellent",
+    "color": "Black & White",
+    "gender": "Neutered - Male",
+    "weightKg": 4.0,
+    "dob": "2025-07-29",
+    "attributes": ["Barks", "Blind", "Escaper"],
+    "notes": null,
+    "customerNotes": "This is simple notes from portal",
+    "photos": ["/seed/dog1.png"]
+  }
+]

@@ -40,4 +40,3 @@ I’ve made a few choices to keep this project solid and maintainable:
 
 ## Things to Know
 - **No Real File Upload**: The photo upload is mocked—returns a URL but doesn’t save files for real.
-- **Gender Handling**: Kept gender as text (e.g., Neutered - Male).

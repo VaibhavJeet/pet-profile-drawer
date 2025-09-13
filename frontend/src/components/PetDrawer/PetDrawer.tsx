@@ -51,6 +51,8 @@ const PetDrawer = ({
   const [groomSortOrder, setGroomSortOrder] = useState<"asc" | "desc">("asc");
   const [bookSortField, setBookSortField] = useState<"start" | null>("start");
   const [bookSortOrder, setBookSortOrder] = useState<"asc" | "desc">("asc");
+  const [gender, setGender] = useState<"Male" | "Female">("Male");
+  const [isNeutered, setIsNeutered] = useState(false);
 
   useEffect(() => {
     if (pet) setEditedPet({ ...pet });
@@ -130,6 +132,17 @@ const PetDrawer = ({
 
   const age = pet?.dob ? calculateAge(pet.dob) : "N/A";
 
+  useEffect(() => {
+    if (pet) {
+      setEditedPet({ ...pet });
+      const genderMatch = pet.gender.match(/^(Neutered\s*-?\s*)?(.+)$/i);
+      if (genderMatch) {
+        setIsNeutered(!!genderMatch[1]);
+        setGender(genderMatch[2] as "Male" | "Female");
+      }
+    }
+  }, [pet]);
+
   const handleSave = () => {
     if (!editedPet) return;
     const requiredFields = ["name", "type", "breed", "gender", "size"];
@@ -141,11 +154,9 @@ const PetDrawer = ({
         return;
       }
     }
-    if (
-      editedPet.weightKg <= 0 ||
-      editedPet.weightKg > 200 ||
-      isNaN(editedPet.weightKg)
-    ) {
+    const weightStr = editedPet.weightKg.toFixed(2);
+    const weightNum = parseFloat(weightStr);
+    if (weightNum <= 0 || weightNum > 200) {
       toast.error("Weight must be between 0 and 200 kg");
       return;
     }
@@ -153,13 +164,14 @@ const PetDrawer = ({
       toast.error("DOB cannot be in the future");
       return;
     }
+    editedPet.gender = `${isNeutered ? "Neutered - " : ""}${gender}`;
     updatePetMutation.mutate(editedPet);
   };
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
-    if (editedPet) {
+    if (editedPet && e.target.name !== "gender") {
       setEditedPet({ ...editedPet, [e.target.name]: e.target.value });
     }
   };
@@ -206,7 +218,10 @@ const PetDrawer = ({
           (file) =>
             new Promise<string>((resolve, reject) => {
               const reader = new FileReader();
-              reader.onload = () => resolve(reader.result as string);
+              reader.onload = () => {
+                toast.success(`Preview: ${file.name} added`);
+                resolve(reader.result as string);
+              };
               reader.onerror = () =>
                 reject(new Error(`Failed to read ${file.name}`));
               reader.readAsDataURL(file);
@@ -268,6 +283,14 @@ const PetDrawer = ({
       setVaccSortField(field);
       setVaccSortOrder("asc");
     }
+  };
+
+  const calculateDaysUntilDue = (dueDateStr: string): number => {
+    const dueDate = new Date(dueDateStr);
+    const today = new Date();
+    const diffTime = dueDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
   };
 
   const { data: grooming = [], isLoading: groomLoading } = useQuery<Grooming[]>(
@@ -373,6 +396,16 @@ const PetDrawer = ({
     { label: "Customer's Notes", value: pet.customerNotes || "N/A" },
   ];
 
+  const predefinedAttributes = [
+    "Barks",
+    "Blind",
+    "Escaper",
+    "Friendly",
+    "Aggressive",
+    "Shy",
+    "Playful",
+  ];
+
   return (
     <div
       role="dialog"
@@ -432,7 +465,13 @@ const PetDrawer = ({
           </div>
           <div className="text-center">
             <h2 className="text-xl font-semibold text-gray-900">{pet.name}</h2>
-            <span className="mt-1 inline-block px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            <span
+              className={`mt-1 inline-block px-3 py-1 rounded-full text-xs font-medium ${
+                pet.status === "Active"
+                  ? "bg-green-100 text-green-800"
+                  : "bg-gray-300 text-gray-700"
+              }`}
+            >
               {pet.status}
             </span>
           </div>
@@ -452,18 +491,20 @@ const PetDrawer = ({
             </button>
             {isActionsOpen && (
               <div className="mt-2 w-full lg:w-auto bg-white border border-gray-200 rounded-md shadow-lg z-10">
-              <button
-                onClick={() => {
-                  setIsEditing(true);
-                  setIsActionsOpen(false);
-                }}
-                className={`block w-full text-left px-4 py-2 text-gray-800 text-sm hover:bg-gray-100 focus:bg-gray-100 focus:outline-none ${
-                  activeTab !== "details" ? 'bg-gray-400 opacity-50 cursor-not-allowed' : ''
-                }`}
-                disabled={activeTab !== "details"}
-              >
-                Edit
-              </button>
+                <button
+                  onClick={() => {
+                    setIsEditing(true);
+                    setIsActionsOpen(false);
+                  }}
+                  className={`block w-full text-left px-4 py-2 text-gray-800 text-sm hover:bg-gray-100 focus:bg-gray-100 focus:outline-none ${
+                    activeTab !== "details"
+                      ? "bg-gray-400 opacity-50 cursor-not-allowed"
+                      : ""
+                  }`}
+                  disabled={activeTab !== "details"}
+                >
+                  Edit
+                </button>
                 <button
                   onClick={() => {
                     setIsDeactivateModalOpen(true);
@@ -491,12 +532,13 @@ const PetDrawer = ({
             role="tab"
             aria-selected={activeTab === "details"}
             aria-controls="tab-details"
-            className={`w-full text-left px-4 py-2 text-sm font-medium rounded focus:outline-none focus:ring-2 focus:ring-pink-500 ${
+            className={`w-full text-left px-4 py-2 text-sm font-medium rounded focus:outline-none focus:ring-2 focus:ring-pink-500 focus-visible:ring-offset-2 ${
               activeTab === "details"
                 ? "bg-gray-100 text-pink-500"
                 : "text-gray-500 hover:bg-gray-50"
             }`}
             onClick={() => setActiveTab("details")}
+            tabIndex={0}
           >
             Pet Details
           </button>
@@ -650,59 +692,128 @@ const PetDrawer = ({
                   />
                 </div>
                 <div>
-                  <label
-                    htmlFor="gender"
-                    className="text-gray-600 font-medium block mb-2"
-                  >
+                  <label className="text-gray-600 font-medium block mb-2">
                     Gender
                   </label>
-                  <input
-                    id="gender"
-                    name="gender"
-                    value={editedPet.gender}
-                    onChange={handleChange}
-                    className="border border-gray-300 p-2 w-full rounded-md focus:ring-2 focus:ring-pink-500"
-                  />
+                  <div className="space-y-2">
+                    <div className="flex items-center">
+                      <input
+                        id="isNeutered"
+                        type="checkbox"
+                        checked={isNeutered}
+                        onChange={(e) => setIsNeutered(e.target.checked)}
+                        className="rounded border-gray-300 text-pink-600 focus:ring-pink-500"
+                      />
+                      <label
+                        htmlFor="isNeutered"
+                        className="ml-2 text-sm font-medium text-gray-700"
+                      >
+                        Neutered
+                      </label>
+                    </div>
+                    <div className="flex space-x-6">
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          value="Male"
+                          checked={gender === "Male"}
+                          onChange={(e) =>
+                            setGender(e.target.value as "Male" | "Female")
+                          }
+                          className="rounded border-gray-300 text-pink-600 focus:ring-pink-500"
+                        />
+                        <span className="ml-2 text-sm font-medium text-gray-700">
+                          Male
+                        </span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          value="Female"
+                          checked={gender === "Female"}
+                          onChange={(e) =>
+                            setGender(e.target.value as "Male" | "Female")
+                          }
+                          className="rounded border-gray-300 text-pink-600 focus:ring-pink-500"
+                        />
+                        <span className="ml-2 text-sm font-medium text-gray-700">
+                          Female
+                        </span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
                 <div className="sm:col-span-2">
-                  <label
-                    htmlFor="attributes"
-                    className="text-gray-600 font-medium block mb-2"
-                  >
+                  <label className="text-gray-600 font-medium block mb-2">
                     Attributes
                   </label>
-                  <div className="flex flex-wrap mb-2 gap-2">
-                    {editedPet.attributes.map((attr, index) => (
-                      <span
-                        key={`${attr}-${index}`}
-                        className="inline-flex items-center bg-gray-200 rounded-full px-3 py-1 text-xs mr-1 mb-1"
-                      >
-                        {attr}
-                        <button
-                          type="button"
-                          onClick={() => removeAttribute(index)}
-                          className="ml-1 text-red-500 hover:text-red-700"
+                  <div className="mb-2">
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {editedPet?.attributes.map((attr, index) => (
+                        <span
+                          key={`${attr}-${index}`}
+                          className="inline-flex items-center bg-gray-200 rounded-full px-3 py-1 text-xs"
                         >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                  <div className="flex gap-2">
-                    <input
-                      id="attributes"
-                      name="attributes"
-                      value={newAttribute}
-                      onChange={(e) => setNewAttribute(e.target.value)}
-                      className="border border-gray-300 p-2 flex-1 rounded-md focus:ring-2 focus:ring-pink-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={addAttribute}
-                      className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:ring-2 focus:ring-blue-500"
-                    >
-                      Add
-                    </button>
+                          {attr}
+                          <button
+                            type="button"
+                            onClick={() => removeAttribute(index)}
+                            className="ml-1 text-red-500 hover:text-red-700"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-2">
+                      {predefinedAttributes.map((attr) => (
+                        <label key={attr} className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={editedPet?.attributes.includes(attr)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setEditedPet({
+                                  ...editedPet,
+                                  attributes: [
+                                    ...(editedPet?.attributes || []),
+                                    attr,
+                                  ],
+                                });
+                              } else {
+                                setEditedPet({
+                                  ...editedPet,
+                                  attributes: (
+                                    editedPet?.attributes || []
+                                  ).filter((a) => a !== attr),
+                                });
+                              }
+                            }}
+                            className="rounded border-gray-300 text-pink-600 focus:ring-pink-500"
+                          />
+                          <span className="ml-2 text-xs text-gray-700">
+                            {attr}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        id="attributes"
+                        name="attributes"
+                        value={newAttribute}
+                        onChange={(e) => setNewAttribute(e.target.value)}
+                        placeholder="Add custom attribute..."
+                        className="border border-gray-300 p-2 flex-1 rounded-md focus:ring-2 focus:ring-pink-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={addAttribute}
+                        className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:ring-2 focus:ring-blue-500"
+                      >
+                        Add
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <div>
@@ -719,7 +830,7 @@ const PetDrawer = ({
                     min="0"
                     max="200"
                     name="weightKg"
-                    value={editedPet.weightKg}
+                    value={editedPet?.weightKg?.toFixed(2)}
                     onChange={(e) =>
                       setEditedPet({
                         ...editedPet,
@@ -940,16 +1051,15 @@ const PetDrawer = ({
                 </thead>
                 <tbody>
                   {sortedVaccinations.map((v) => {
-                    const dueDate = new Date(v.due);
-                    const today = new Date();
-                    const days = Math.ceil(
-                      (dueDate.getTime() - today.getTime()) /
-                        (1000 * 60 * 60 * 24)
-                    );
+                    const daysUntilDue = calculateDaysUntilDue(v.due);
                     const dueBadge =
-                      days > 0 && days <= 30 ? (
+                      daysUntilDue > 0 && daysUntilDue <= 30 ? (
                         <span className="ml-2 bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-medium">
-                          Due within 30 days
+                          Due within {daysUntilDue} days
+                        </span>
+                      ) : daysUntilDue <= 0 ? (
+                        <span className="ml-2 bg-red-100 text-red-800 px-2 py-1 rounded text-xs font-medium">
+                          Overdue
                         </span>
                       ) : null;
                     return (
@@ -972,7 +1082,26 @@ const PetDrawer = ({
         {activeTab === "grooming" && (
           <div id="tab-grooming" role="tabpanel" className="space-y-6">
             {groomLoading ? (
-              <div className="animate-pulse"> </div>
+              <div className="animate-pulse">
+                <table className="w-full">
+                  <thead>
+                    <tr>
+                      <th className="h-8 bg-gray-300"></th>
+                      <th className="h-8 bg-gray-300"></th>
+                      <th className="h-8 bg-gray-300"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...Array(3)].map((_, i) => (
+                      <tr key={i}>
+                        <td className="h-8 bg-gray-300"></td>
+                        <td className="h-8 bg-gray-300"></td>
+                        <td className="h-8 bg-gray-300"></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             ) : sortedGrooming.length === 0 ? (
               <p className="text-gray-500 text-center">No grooming records</p>
             ) : (
@@ -980,7 +1109,7 @@ const PetDrawer = ({
                 <thead>
                   <tr className="bg-gray-50">
                     <th
-                      className="border-b border-gray-200 p-3 text-left text-sm font-medium text-gray-700 cursor-pointer"
+                      className="border-b border-gray-200 p-3 text-left text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
                       onClick={() => handleGroomSort("date")}
                     >
                       Date{" "}
@@ -997,7 +1126,10 @@ const PetDrawer = ({
                 </thead>
                 <tbody>
                   {sortedGrooming.map((g) => (
-                    <tr key={g.id} className="border-b border-gray-200">
+                    <tr
+                      key={g.id}
+                      className="border-b border-gray-200 hover:bg-gray-50"
+                    >
                       <td className="p-3 text-sm text-gray-900">{g.date}</td>
                       <td className="p-3 text-sm text-gray-900">{g.service}</td>
                       <td className="p-3 text-sm text-gray-900">{g.notes}</td>
@@ -1011,7 +1143,26 @@ const PetDrawer = ({
         {activeTab === "bookings" && (
           <div id="tab-bookings" role="tabpanel" className="space-y-6">
             {bookLoading ? (
-              <div className="animate-pulse"> </div>
+              <div className="animate-pulse">
+                <table className="w-full">
+                  <thead>
+                    <tr>
+                      <th className="h-8 bg-gray-300"></th>
+                      <th className="h-8 bg-gray-300"></th>
+                      <th className="h-8 bg-gray-300"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...Array(3)].map((_, i) => (
+                      <tr key={i}>
+                        <td className="h-8 bg-gray-300"></td>
+                        <td className="h-8 bg-gray-300"></td>
+                        <td className="h-8 bg-gray-300"></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             ) : sortedBookings.length === 0 ? (
               <p className="text-gray-500 text-center">No bookings</p>
             ) : (
@@ -1022,7 +1173,7 @@ const PetDrawer = ({
                       Type
                     </th>
                     <th
-                      className="border-b border-gray-200 p-3 text-left text-sm font-medium text-gray-700 cursor-pointer"
+                      className="border-b border-gray-200 p-3 text-left text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100"
                       onClick={() => handleBookSort("start")}
                     >
                       Date Range{" "}
@@ -1035,17 +1186,36 @@ const PetDrawer = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedBookings.map((b) => (
-                    <tr key={b.id} className="border-b border-gray-200">
-                      <td className="p-3 text-sm text-gray-900">{b.type}</td>
-                      <td className="p-3 text-sm text-gray-900">
-                        <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-medium">
-                          {b.start} - {b.end}
-                        </span>
-                      </td>
-                      <td className="p-3 text-sm text-gray-900">{b.status}</td>
-                    </tr>
-                  ))}
+                  {sortedBookings.map((b) => {
+                    const statusColor =
+                      b.status === "Confirmed"
+                        ? "bg-green-100 text-green-800"
+                        : b.status === "Pending"
+                        ? "bg-yellow-100 text-yellow-800"
+                        : "bg-gray-100 text-gray-800";
+                    return (
+                      <tr
+                        key={b.id}
+                        className="border-b border-gray-200 hover:bg-gray-50"
+                      >
+                        <td className="p-3 text-sm text-gray-900">{b.type}</td>
+                        <td className="p-3 text-sm text-gray-900">
+                          <span
+                            className={`bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs font-medium`}
+                          >
+                            {b.start} - {b.end}
+                          </span>
+                        </td>
+                        <td className="p-3 text-sm text-gray-900">
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-medium ${statusColor}`}
+                          >
+                            {b.status}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
